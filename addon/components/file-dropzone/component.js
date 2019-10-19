@@ -1,13 +1,14 @@
 /* global Blob, Uint8Array */
-import Ember from 'ember';
+import BaseComponent from '../base-component';
+
+import { bind } from '@ember/runloop';
+import { set, get } from '@ember/object';
+import { getOwner } from '@ember/application';
 import layout from './template';
 import DataTransfer from '../../system/data-transfer';
 import uuid from '../../system/uuid';
+import parseHTML from '../../system/parse-html';
 import DragListener from '../../system/drag-listener';
-
-const { $, get, set, computed } = Ember;
-const { bind } = Ember.run;
-const { service } = Ember.inject;
 
 const DATA_TRANSFER = 'DATA_TRANSFER' + uuid.short();
 
@@ -19,30 +20,72 @@ let supported = (function () {
 const dragListener = new DragListener();
 
 /**
-  @class file-dropzone
+  `{{file-dropzone}}` is an element that will allow users to upload files by
+   drag and drop.
+
+  ```hbs
+  {{{#file-dropzone name="photos" as |dropzone queue|}}
+    {{#if dropzone.active}}
+      {{#if dropzone.valid}}
+        Drop to upload
+      {{else}}
+        Invalid
+      {{/if}}
+    {{else if queue.files.length}}
+      Uploading {{queue.files.length}} files. ({{queue.progress}}%)
+    {{else}}
+      <h4>Upload Images</h4>
+      <p>
+        {{#if dropzone.supported}}
+          Drag and drop images onto this area to upload them or
+        {{/if}}
+        {{#file-upload name="photos"
+                      accept="image/*"
+                      multiple=true
+                      onfileadd=(action "uploadImage")}}
+          <a id="upload-image" tabindex=0>Add an Image.</a>
+        {{/file-upload}}
+      </p>
+    {{/if}}
+  {{/file-dropzone}}
+  ```
+
+  ```js
+  import Controller from '@ember/controller';
+
+  export default Ember.Route.extend({
+    actions: {
+      uploadImage(file) {
+       file.upload(URL, options).then((response) => {
+          ...
+       });
+      }
+    }
+  });
+  ```
+
+  @class FileDropzone
   @type Ember.Component
+  @yield {Hash} dropzone
+  @yield {boolean} dropzone.supported
+  @yield {boolean} dropzone.active
+  @yield {boolean} dropzone.valid
+  @yield {Queue} queue
  */
-export default Ember.Component.extend({
+export default BaseComponent.extend({
 
   layout,
 
-  /**
-    The name of the queue that files should be
-    added to when they get dropped.
-
-    @attribute name
-    @type string
-   */
-  name: null,
-
   supported,
+  active: false,
+  valid: true,
 
   /**
     `ondragenter` is called when a file has entered
     the dropzone.
 
-    @attribute ondragenter
-    @type function
+    @argument ondragenter
+    @type {function}
    */
   ondragenter: null,
 
@@ -50,20 +93,18 @@ export default Ember.Component.extend({
     `ondragleave` is called when a file has left
     the dropzone.
 
-    @attribute ondragleave
-    @type function
+    @argument ondragleave
+    @type {function}
    */
   ondragleave: null,
 
   /**
     `ondrop` is called when a file has been dropped.
 
-    @attribute ondrop
-    @type function
+    @argument ondrop
+    @type {function}
    */
   ondrop: null,
-
-  fileQueue: service(),
 
   /**
     Whether users can upload content
@@ -72,8 +113,8 @@ export default Ember.Component.extend({
     your app. The default is `false` to
     prevent cross-site scripting issues.
 
-    @attribute allowUploadsFromWebsites
-    @type boolean
+    @argument allowUploadsFromWebsites
+    @type {boolean}
     @default false
    */
   allowUploadsFromWebsites: false,
@@ -90,20 +131,11 @@ export default Ember.Component.extend({
     - `move`
     - `link`
 
-    @attribute cursor
-    @type string
+    @argument cursor
+    @type {string}
     @default null
    */
   cursor: null,
-
-  queue: computed('name', {
-    get() {
-      let queueName = get(this, 'name');
-      let queues = get(this, 'fileQueue');
-      return queues.find(queueName) ||
-             queues.create(queueName);
-    }
-  }),
 
   didInsertElement() {
     this._super();
@@ -111,8 +143,8 @@ export default Ember.Component.extend({
     dragListener.addEventListeners(`#${get(this, 'elementId')}`, {
       dragenter: bind(this, 'didEnterDropzone'),
       dragleave: bind(this, 'didLeaveDropzone'),
-      dragover:  bind(this, 'didDragOver'),
-      drop:      bind(this, 'didDrop')
+      dragover: bind(this, 'didDragOver'),
+      drop: bind(this, 'didDrop')
     });
   },
 
@@ -121,7 +153,10 @@ export default Ember.Component.extend({
   },
 
   isAllowed() {
-    return get(this[DATA_TRANSFER], 'source') === 'os' ||
+    const { environment } = getOwner(this).resolveRegistration('config:environment');
+
+    return environment === 'test' ||
+           get(this[DATA_TRANSFER], 'source') === 'os' ||
            get(this, 'allowUploadsFromWebsites');
   },
 
@@ -129,7 +164,8 @@ export default Ember.Component.extend({
     let dataTransfer = DataTransfer.create({
       queue: get(this, 'queue'),
       source: evt.source,
-      dataTransfer: evt.dataTransfer
+      dataTransfer: evt.dataTransfer,
+      itemDetails: evt.itemDetails
     });
     this[DATA_TRANSFER] = dataTransfer;
 
@@ -155,6 +191,9 @@ export default Ember.Component.extend({
         this[DATA_TRANSFER] = null;
       }
 
+      if (get(this, 'isDestroyed')) {
+        return;
+      }
       set(this, 'active', false);
     }
   },
@@ -181,8 +220,9 @@ export default Ember.Component.extend({
 
     let html = this[DATA_TRANSFER].getData('text/html');
     if (html) {
-      let img = $(html)[1];
-      if (img.tagName === 'IMG') {
+      let parsedHtml = parseHTML(html);
+      let img = parsedHtml.getElementsByTagName('img')[0];
+      if (img) {
         url = img.src;
       }
     }
@@ -209,9 +249,9 @@ export default Ember.Component.extend({
             set(file, 'name', filename);
           });
         } else {
-          let binStr = atob(canvas.toDataURL().split(',')[1]),
-              len = binStr.length,
-              arr = new Uint8Array(len);
+          let binStr = atob(canvas.toDataURL().split(',')[1]);
+          let len = binStr.length;
+          let arr = new Uint8Array(len);
 
           for (var i=0; i<len; i++ ) {
             arr[i] = binStr.charCodeAt(i);

@@ -1,10 +1,10 @@
-import Ember from 'ember';
-
-const { run: { bind, next, cancel } } = Ember;
+import { assert } from '@ember/debug';
+import { A } from '@ember/array';
+import { cancel, next, bind } from '@ember/runloop';
 
 export default class {
   constructor() {
-    this._listeners = Ember.A();
+    this._listeners = A();
     this._stack = [];
 
     // Keep a stack of deferred actions to take
@@ -12,15 +12,15 @@ export default class {
     // `dragleave` / `dragenter` are called on the
     // same element back to back, which isn't what
     // we want to provide as an API.
-    this._events = Ember.A();
+    this._events = A();
   }
 
   beginListening() {
     let handlers = this._handlers = {
       dragenter: bind(this, 'dragenter'),
       dragleave: bind(this, 'dragleave'),
-      dragover:  bind(this, 'dragover'),
-      drop:      bind(this, 'drop')
+      dragover: bind(this, 'dragover'),
+      drop: bind(this, 'drop')
     };
 
     let body = document.body;
@@ -65,7 +65,7 @@ export default class {
 
     for (let i = 0, len = this._listeners.length; i < len; i++) {
       let listener = this._listeners[i];
-      Ember.assert(`Cannot add multiple listeners for the same element ${selector}, ${listener.selector}`, document.querySelector(selector) !== document.querySelector(listener.selector));
+      assert(`Cannot add multiple listeners for the same element ${selector}, ${listener.selector}`, document.querySelector(selector) !== document.querySelector(listener.selector));
 
       if (document.querySelector(`${listener.selector} ${selector}`)) {
         insertAt = i;
@@ -91,15 +91,31 @@ export default class {
 
   getEventSource(evt) {
     let types = evt.dataTransfer.types || [];
-    let areAllTypesFiles = true;
+    let areSomeTypesFiles = false;
     for (let i = 0, len = types.length; i < len; i++) {
-      if (types[i] !== 'Files' &&
-          types[i] !== 'application/x-moz-file') {
-        areAllTypesFiles = false;
+      if (types[i] === 'Files' ||
+          types[i] === 'application/x-moz-file') {
+        areSomeTypesFiles = true;
         break;
       }
     }
-    return areAllTypesFiles ? 'os' : 'web';
+    return areSomeTypesFiles ? 'os' : 'web';
+  }
+
+  getDataTransferItemDetails(evt) {
+    let itemDetails = [];
+
+    if (evt.dataTransfer.items){
+      for (let i = 0; i < evt.dataTransfer.items.length; i++) {
+        let item = evt.dataTransfer.items[i];
+        itemDetails.push({
+          kind: item.kind,
+          type: item.type
+        });
+      }
+    }
+
+    return itemDetails;
   }
 
   dragenter(evt) {
@@ -114,7 +130,8 @@ export default class {
     if (listener) {
       this.scheduleEvent('dragenter', listener, {
         source: this.getEventSource(evt),
-        dataTransfer: evt.dataTransfer
+        dataTransfer: evt.dataTransfer,
+        itemDetails: this.getDataTransferItemDetails(evt)
       });
     }
     this._listener = listener;
@@ -139,7 +156,8 @@ export default class {
       }
       this.scheduleEvent('dragenter', listener, {
         source: this.getEventSource(evt),
-        dataTransfer: evt.dataTransfer
+        dataTransfer: evt.dataTransfer,
+        itemDetails: this.getDataTransferItemDetails(evt)
       });
       if (this._stack.indexOf(listener) !== -1) {
         listener.handlers.dragover(evt);
@@ -184,13 +202,13 @@ export default class {
       listener.handlers[eventName](event);
     });
 
-    this._events = Ember.A();
+    this._events = A();
     this._scheduled = false;
   }
 
   drop(evt) {
     this._stack = [];
-    this._events = Ember.A();
+    this._events = A();
     this._scheduled = false;
     this._listener = null;
 

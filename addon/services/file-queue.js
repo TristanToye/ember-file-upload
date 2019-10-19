@@ -1,8 +1,10 @@
-import Ember from 'ember';
+import { assert } from '@ember/debug';
+import { A } from '@ember/array';
+import Service from '@ember/service';
+import { observer, computed, set, get } from '@ember/object';
+import { once } from '@ember/runloop';
 import Queue from '../queue';
 import sumBy from '../computed/sum-by';
-
-const { get, set, computed, observer, run: { once } } = Ember;
 
 /**
   The file queue service is a global file
@@ -13,21 +15,22 @@ const { get, set, computed, observer, run: { once } } = Ember;
   asking them whether they want to cancel
   the remaining uploads.
 
-  @class file-queue
+  @class FileQueue
   @extends Ember.Service
  */
-export default Ember.Service.extend({
+export default Service.extend({
 
   /**
-    @private
-    @constructor
-    @method
     Setup a map of uploaders so they may be
     accessed by name via the `find` method.
+
+    @constructor
    */
+
   init() {
-    set(this, 'queues', Ember.A());
-    set(this, 'files', Ember.A());
+    this._super(...arguments);
+    set(this, 'queues', A());
+    set(this, 'files', A());
   },
 
   /**
@@ -50,8 +53,6 @@ export default Ember.Service.extend({
   files: null,
 
   /**
-    @private
-
     Flushes the `files` property when they have settled. This
     will only flush files when all files have arrived at a terminus
     of their state chart.
@@ -69,12 +70,12 @@ export default Ember.Service.extend({
            `-------------------------------`
     ```
 
-    Files *may* be requeued by the uesr in the `failed` or `timed_out`
+    Files *may* be requeued by the user in the `failed` or `timed_out`
     states.
 
-    @method flushFilesWhenSettled
+    @type {Observer}
    */
-  flushFilesWhenSettled: observer('files.@each.state', function () {
+  flushFilesWhenSettled: observer('files.@each.state', function () { // eslint-disable-line ember/no-observers
     let files = get(this, 'files');
     let allFilesHaveSettled = files.every(function (file) {
       return ['uploaded', 'aborted'].indexOf(file.state) !== -1;
@@ -84,14 +85,14 @@ export default Ember.Service.extend({
 
     if (allFilesHaveSettled) {
       get(this, 'files').forEach((file) => set(file, 'queue', null));
-      set(this, 'files', Ember.A());
+      set(this, 'files', A());
     }
   }),
 
   /**
     The total size of all files currently being uploaded in bytes.
 
-    @property size
+    @computed size
     @type Number
     @default 0
     @readonly
@@ -101,7 +102,7 @@ export default Ember.Service.extend({
   /**
     The number of bytes that have been uploaded to the server.
 
-    @property loaded
+    @computed loaded
     @type Number
     @default 0
     @readonly
@@ -112,7 +113,7 @@ export default Ember.Service.extend({
     The current progress of all uploads, as a percentage in the
     range of 0 to 100.
 
-    @property progress
+    @computed progress
     @type Number
     @default 0
     @readonly
@@ -143,7 +144,7 @@ export default Ember.Service.extend({
     @return {Queue} The new queue.
    */
   create(name) {
-    Ember.assert(`Queue names are required to be unique. "${name}" has already been reserved.`, this.find(name) == null);
+    assert(`Queue names are required to be unique. "${name}" has already been reserved.`, this.find(name) == null);
 
     let queue = Queue.create({ name, fileQueue: this });
     get(this, 'queues').push(queue);

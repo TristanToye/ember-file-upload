@@ -1,4 +1,3 @@
-/* eslint-env node */
 'use strict';
 
 module.exports = function(environment) {
@@ -6,7 +5,8 @@ module.exports = function(environment) {
     modulePrefix: 'dummy',
     environment,
     rootURL: '/',
-    locationType: 'auto',
+    locationType: 'router-scroll',
+    historySupportMiddleware: true, // ember-router-scroll
     'ember-cli-mirage': {
       enabled: true
     },
@@ -44,12 +44,14 @@ module.exports = function(environment) {
     ENV.APP.LOG_VIEW_LOOKUPS = false;
 
     ENV.APP.rootElement = '#ember-testing';
+    ENV.APP.autoboot = false;
   }
 
   if (environment === 'production') {
-    ENV.locationType = 'hash';
+    // Allow ember-cli-addon-docs to update the rootURL in compiled assets
+    // TODO check if we need this, currently we have manually setup rootURL
+    // and prepending /ember-file-upload in ember-cli-build.js to assets
     ENV.rootURL = '/ember-file-upload/';
-
   }
 
   return ENV;

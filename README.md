@@ -1,8 +1,28 @@
-# {{file-upload}} [![Build Status](https://travis-ci.org/tim-evans/ember-file-upload.svg)](https://travis-ci.org/tim-evans/ember-file-upload) [![Code Climate](https://codeclimate.com/github/tim-evans/ember-file-upload/badges/gpa.svg)](https://codeclimate.com/github/tim-evans/ember-file-upload) [![Ember Observer Score](http://emberobserver.com/badges/ember-file-upload.svg)](http://emberobserver.com/addons/ember-file-upload)
+# {{file-upload}} [![Build Status](https://travis-ci.org/adopted-ember-addons/ember-file-upload.svg?branch=latest)](https://travis-ci.org/adopted-ember-addons/ember-file-upload) [![Code Climate](https://codeclimate.com/github/adopted-ember-addons/ember-file-upload/badges/gpa.svg)](https://codeclimate.com/github/adopted-ember-addons/ember-file-upload) [![Ember Observer Score](https://emberobserver.com/badges/ember-file-upload.svg)](https://emberobserver.com/addons/ember-file-upload)
 
 {{file-upload}} is an ember component that provides an API for file uploads. Uploads are persistent across routes in your application (they continue in the background).
 
 To use the uploader, you must provide a name (for proper queueing and bundling of resources), and an upload URL.
+
+## Table of Contents
+
+<!-- toc -->
+
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Recipes](#recipes)
+- [Integration](#integration)
+- [Access to the global list of uploading files](#access-to-the-global-list-of-uploading-files)
+- [Acceptance Tests](#acceptance-tests)
+- [S3 Direct uploads](#s3-direct-uploads)
+- [Contributing](#contributing)
+- [Publishing](#publishing)
+
+<!-- tocstop -->
+
+## Installation
+
+* `ember install ember-file-upload`
 
 ## Configuration
 
@@ -12,6 +32,7 @@ exposes a variety of parameters for configuring file-uploader:
 
 | Attribute           | Definition
 |---------------------|------------------|
+| `name`              | The name of the queue to use
 | `accept`            | a list of MIME types/extensions to accept by input
 | `multiple`          | whether multiple files can be selected
 | `disabled`          | if set, disables input and prevents files from being added to the queue
@@ -21,6 +42,7 @@ The `{{file-dropzone}}` component:
 
 | Attribute           | Definition
 |---------------------|------------------|
+| `name`              | The name of the queue to use
 | `ondragenter`       | the name of the action to be called when a file has entered the dropzone
 | `ondragleave`       | the name of the action to be called when a file has left the dropzone
 | `ondrop`            | the name of the action to be called when a file has been dropped in the dropzone
@@ -64,16 +86,76 @@ For example, creating an image uploader that uploads images to your API server w
         Drag and drop images onto this area to upload them or
       {{/if}}
       {{#file-upload name="photos"
+                     for="upload-photo"
                      accept="image/*"
                      multiple=true
-                     onfileadd=(route-action "uploadImage")}}
-        <a id="upload-image" tabindex=0>Add an Image.</a>
+                     onfileadd=(action "uploadImage")}}
+        <a tabindex=0>Add an Image.</a>
       {{/file-upload}}
     </p>
   {{/if}}
 {{/file-dropzone}}
 ```
 
+It is also possible for you to create a simple file upload button which yields the queue:
+
+```handlebars
+{{#file-upload name="photos"
+               accept="image/*"
+               onfileadd=(action "uploadImage") as |queue|}}
+  <a class="button">
+    {{#if queue.files.length}}
+      Uploading...
+    {{else}}
+      Upload file
+    {{/if}}
+  </a>
+{{/file-upload}}
+```
+
+The examples above using angle bracket invocation, available in Ember 3.4+
+
+```handlebars
+<FileDropzone @name="photos" as |dropzone queue|>
+  {{#if dropzone.active}}
+    {{#if dropzone.valid}}
+      Drop to upload
+    {{else}}
+      Invalid
+    {{/if}}
+  {{else if queue.files.length}}
+    Uploading {{queue.files.length}} files. ({{queue.progress}}%)
+  {{else}}
+    <h4>Upload Images</h4>
+    <p>
+      {{#if dropzone.supported}}
+        Drag and drop images onto this area to upload them or
+      {{/if}}
+      <FileUpload @name="photos"
+                  @for="upload-photo"
+                  @accept="image/*"
+                  @multiple={{true}}
+                  @onfileadd={{action "uploadImage"}} >
+        <a tabindex=0>Add an Image.</a>
+      </FileUpload>
+    </p>
+  {{/if}}
+</FileDropzone>
+```
+
+```handlebars
+<FileUpload @name="photos"
+            @accept="image/*"
+            @onfileadd={{action "uploadImage"}} as |queue|>
+  <a class="button">
+    {{#if queue.files.length}}
+      Uploading...
+    {{else}}
+      Upload file
+    {{/if}}
+  </a>
+</FileUpload>
+```
 ## Integration
 
 The addon emits an event when a file is queued for upload. You may trigger the upload by calling the `upload` function on the file, which returns a promise that is resolved when the file has finished uploading and is rejected if the file couldn't be uploaded.
@@ -93,7 +175,7 @@ export default Ember.Route.extend({
       filename: get(file, 'name'),
       filesize: get(file, 'size')
     });
-    
+
     try {
       file.readAsDataURL().then(function (url) {
         if (get(photo, 'url') == null) {
@@ -125,55 +207,9 @@ A common scenario is to alert users that they still have pending uploads when th
 
 In addition to the file list, there are properties that indicate how many bytes have been uploaded (`loaded`), the total size of all files in bytes (`size`), and the progress of all files (`progress`). Using these, you may implement a global progress bar indicating files that are uploading in the background.
 
-## Acceptance Tests
+## Testing
 
-`ember-file-upload` integrates with `ember-cli-mirage` for acceptance tests. This helper provides a way to realistically simulate file uploads, including progress events and failure states. The helper adds another method to the mirage server called `upload`, which will handle upload requests.
-
-
-`mirage/config.js`
-```javascript
-import { upload } from 'ember-file-upload/mirage';
-
-export default function () {
-  this.post('/photos/new', upload(function (db, file) {
-    let { name: filename, size: filesize, url } = file;
-    let photo = db.create('photo', { filename, filesize, url, uploadedAt: new Date() });
-    return photo;
-  }));
-}
-```
-
-```javascript
-import { upload } from '../../helpers/upload';
-import File from 'ember-file-upload/file';
-
-moduleForAcceptance('/photos');
-
-test('uploading an image', async function (assert) {
-  let file = File.fromDataURL('data:image/gif;base64,R0lGODdhCgAKAIAAAAEBAf///ywAAAAACgAKAAACEoyPBhp7vlySqVVFL8oWg89VBQA7');
-
-  await upload('#upload-photo', file, 'smile.gif');
-
-  let photo = server.db.photos[0];
-  assert.equal(photo.filename, 'smile.gif');
-});
-```
-
-If the file isn't uploaded to the server, you don't need to use the mirage helper. The same approach applies to all types of files; encode them as a Base64 data url or read them from a file as a blob.
-
-```javascript
-import upload from '../helpers/upload';
-
-moduleForAcceptance('/notes');
-
-test('showing a note', async function (assert) {
-  let file = File.fromDataUrl('data:text/plain;base64,SSBjYW4gZmVlbCB0aGUgbW9uZXkgbGVhdmluZyBteSBib2R5');
-
-  await upload('#upload-note', file, 'douglas_coupland.txt');
-
-  assert.equal(find('.note').text(), 'I can feel the money leaving my body');
-});
-```
+`ember-file-upload` provides a test helper for testing as well as an integration for `ember-cli-mirage`. Please have a look in the [documentation](https://adopted-ember-addons.github.io/ember-file-upload/docs/testing) for details.
 
 ## S3 Direct uploads
 
@@ -303,28 +339,14 @@ export default Ember.Route.extend({
 });
 ```
 
-# Installation
 
-* `ember install ember-file-upload`
+## Contributing
 
-## Running
-
-* `ember serve`
-* Visit your app at [http://localhost:4200](http://localhost:4200).
-
-## Running Tests
-
-* `npm test` (Runs `ember try:each` to test your addon against multiple Ember versions)
-* `ember test`
-* `ember test --server`
-
-# Contributing
-
-Contributors are welcome! Please provide a reproducible test case. Details will be worked out on a case-per-case basis. Maintainers will get in touch when they can, so delays are possible. For contribution guidelines, see the [code of conduct](https://github.com/tim-evans/ember-file-upload/blob/latest/CONDUCT.md).
+Contributors are welcome! Please provide a reproducible test case. Details will be worked out on a case-per-case basis. Maintainers will get in touch when they can, so delays are possible. For contribution guidelines, see [Contributing](CONTRIBUTING.md) and [code of conduct](CONDUCT.md).
 
 
 ## Publishing
 
 * `ember github-pages:commit --message "Releasing docs"`
 
-For more information on using ember-cli, visit [http://ember-cli.com/](http://ember-cli.com/).
+For more information on using ember-cli, visit [https://ember-cli.com/](https://ember-cli.com/).

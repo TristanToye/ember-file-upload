@@ -1,14 +1,14 @@
 /* global atob, Uint8Array */
-import Ember from 'ember';
+import { registerWaiter } from '@ember/test';
+import { DEBUG } from '@glimmer/env';
+
+import { assert } from '@ember/debug';
+import EmberObject, { set, get, computed } from '@ember/object';
 import FileReader from './system/file-reader';
 import HTTPRequest from './system/http-request';
 import RSVP from 'rsvp';
 import uuid from './system/uuid';
 
-import get from 'ember-metal/get';
-import set from 'ember-metal/set';
-
-const { computed } = Ember;
 const { reads } = computed;
 
 function normalizeOptions(file, url, options) {
@@ -51,8 +51,8 @@ function normalizeOptions(file, url, options) {
 }
 
 function upload(file, url, opts, uploadFn) {
-  if (['queued', 'failed', 'timed_out'].indexOf(get(file, 'state')) === -1) {
-    Ember.assert(`The file ${file.id} is in the state "${get(file, 'state')}" and cannot be requeued.`);
+  if (['queued', 'failed', 'timed_out', 'aborted'].indexOf(get(file, 'state')) === -1) {
+    assert(`The file ${file.id} is in the state "${get(file, 'state')}" and cannot be requeued.`);
   }
 
   let options = normalizeOptions(file, url, opts);
@@ -95,7 +95,7 @@ function upload(file, url, opts, uploadFn) {
 
   let uploadPromise = uploadFn(request, options);
 
-  uploadPromise.then(function (result) {
+  uploadPromise = uploadPromise.then(function (result) {
     set(file, 'state', 'uploaded');
     return result;
   }, function (error) {
@@ -110,8 +110,8 @@ function upload(file, url, opts, uploadFn) {
 }
 
 let inflightRequests = 0;
-if (Ember.Test) {
-  Ember.Test.registerWaiter(null, function () {
+if (DEBUG) {
+  registerWaiter(null, function () {
     return inflightRequests === 0;
   });
 }
@@ -123,7 +123,7 @@ if (Ember.Test) {
   @class File
   @extends Ember.Object
  */
-export default Ember.Object.extend({
+export default EmberObject.extend({
 
   init() {
     this._super();
@@ -137,7 +137,7 @@ export default Ember.Object.extend({
   /**
     A unique id generated for this file.
 
-    @property
+    @property id
     @type {String}
     @readonly
    */
@@ -146,7 +146,7 @@ export default Ember.Object.extend({
   /**
     The file name.
 
-    @property name
+    @accessor name
     @type {String}
    */
   name: computed({
@@ -161,7 +161,7 @@ export default Ember.Object.extend({
   /**
     The size of the file in bytes.
 
-    @property size
+    @accessor size
     @type {Number}
     @readonly
    */
@@ -172,7 +172,7 @@ export default Ember.Object.extend({
 
     For a image file this may be `image/png`.
 
-    @property type
+    @accessor type
     @type {String}
     @readonly
    */
@@ -182,7 +182,7 @@ export default Ember.Object.extend({
     Returns the appropriate file extension of
     the file according to the type
 
-    @property extension
+    @accessor extension
     @type {String}
     @readonly
    */
@@ -193,7 +193,7 @@ export default Ember.Object.extend({
   }),
 
   /**
-    @property loaded
+    @accessor loaded
     @type {Number}
     @default 0
     @readonly
@@ -201,7 +201,7 @@ export default Ember.Object.extend({
   loaded: 0,
 
   /**
-    @property progress
+    @accessor progress
     @type {Number}
     @default 0
     @readonly
@@ -219,7 +219,7 @@ export default Ember.Object.extend({
     - `uploaded`
     - `failed`
 
-    @property state
+    @accessor state
     @type {String}
     @default 'queued'
     @readonly
@@ -259,13 +259,21 @@ export default Ember.Object.extend({
     files. This usually means that the file was created
     manually by the developer.
 
-    @property source
+    @accessor source
     @type {String}
     @default ''
     @readonly
    */
   source: '',
 
+  /**
+   * Upload file with `application/octet-stream` content type.
+   *
+   * @method uploadBinary
+   * @param {String} url Your server endpoint where to upload the file
+   * @param {hash} opts
+   * @return {Promise}
+   */
   uploadBinary(url, opts) {
     opts.contentType = 'application/octet-stream';
     return upload(this, url, opts, (request) => {
@@ -273,6 +281,14 @@ export default Ember.Object.extend({
     });
   },
 
+  /**
+   * Upload file to your server
+   *
+   * @method upload
+   * @param {String} url Your server endpoint where to upload the file
+   * @param {Hash} opts { fileKey: string, data: { key: string } }
+   * @return {Promise}
+   */
   upload(url, opts) {
     return upload(this, url, opts, (request, options) => {
       // Build the form
@@ -290,21 +306,45 @@ export default Ember.Object.extend({
     });
   },
 
+  /**
+   * Resolves with Blob as ArrayBuffer
+   *
+   * @method readAsArrayBuffer
+   * @return {Promise}
+   */
   readAsArrayBuffer() {
     let reader = new FileReader({ label: `Read ${get(this, 'name')} as an ArrayBuffer` });
     return reader.readAsArrayBuffer(this.blob);
   },
 
+  /**
+   * Resolves with Blob as DataURL
+   *
+   * @method readAsDataURL
+   * @return {Promise}
+   */
   readAsDataURL() {
     let reader = new FileReader({ label: `Read ${get(this, 'name')} as a Data URI` });
     return reader.readAsDataURL(this.blob);
   },
 
+  /**
+   * Resolves with Blob as binary string
+   *
+   * @method readAsBinaryString
+   * @return {Promise}
+   */
   readAsBinaryString() {
     let reader = new FileReader({ label: `Read ${get(this, 'name')} as a binary string` });
     return reader.readAsBinaryString(this.blob);
   },
 
+  /**
+   * Resolves with Blob as plain text
+   *
+   * @method readAsText
+   * @return {Promise}
+   */
   readAsText() {
     let reader = new FileReader({ label: `Read ${get(this, 'name')} as text` });
     return reader.readAsText(this.blob);

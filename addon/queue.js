@@ -1,8 +1,13 @@
-import Ember from 'ember';
+import { A } from '@ember/array';
+import EmberObject, {
+  observer,
+  computed,
+  set,
+  get
+} from '@ember/object';
+import { next } from '@ember/runloop';
 import File from './file';
 import sumBy from './computed/sum-by';
-
-const { get, set, computed, observer, run: { next } } = Ember;
 
 /**
   The Queue is a collection of files that
@@ -15,11 +20,11 @@ const { get, set, computed, observer, run: { next } } = Ember;
   @class Queue
   @extends Ember.Object
  */
-export default Ember.Object.extend({
+export default EmberObject.extend({
 
   init() {
-    set(this, 'files', Ember.A());
-    set(this, '_dropzones', Ember.A());
+    set(this, 'files', A());
+    set(this, '_dropzones', A());
     this._super();
   },
 
@@ -27,7 +32,7 @@ export default Ember.Object.extend({
     this._super();
     get(this, 'fileQueue.queues').delete(get(this, 'name'));
     get(this, 'files').forEach((file) => set(file, 'queue', null));
-    set(this, 'files', Ember.A());
+    set(this, 'files', A());
   },
 
   /**
@@ -50,7 +55,6 @@ export default Ember.Object.extend({
 
   /**
     @private
-    @method _addFiles
     @param {FileList} fileList The event triggered from the DOM that contains a list of files
    */
   _addFiles(fileList, source) {
@@ -126,7 +130,7 @@ export default Ember.Object.extend({
     @type File[]
     @default []
    */
-  files: [],
+  files: null,
 
   /**
     Flushes the `files` property when they have settled. This
@@ -146,13 +150,12 @@ export default Ember.Object.extend({
            `-------------------------------`
     ```
 
-    Files *may* be requeued by the uesr in the `failed` or `timed_out`
+    Files *may* be requeued by the user in the `failed` or `timed_out`
     states.
 
     @private
-    @method flushFilesWhenSettled
    */
-  flushFilesWhenSettled: observer('files.@each.state', function () {
+  flushFilesWhenSettled: observer('files.@each.state', function () { // eslint-disable-line ember/no-observers
     let files = get(this, 'files');
     let allFilesHaveSettled = files.every(function (file) {
       return ['uploaded', 'aborted'].indexOf(file.state) !== -1;
@@ -162,14 +165,14 @@ export default Ember.Object.extend({
 
     if (allFilesHaveSettled) {
       get(this, 'files').forEach((file) => set(file, 'queue', null));
-      set(this, 'files', Ember.A());
+      set(this, 'files', A());
     }
   }),
 
   /**
     The aggregate size (in bytes) of all files in the queue.
 
-    @property size
+    @accessor size
     @readonly
     @type number
     @default 0
@@ -180,7 +183,7 @@ export default Ember.Object.extend({
     The aggregate amount of bytes that have been uploaded
     to the server for all files in the queue.
 
-    @property loaded
+    @accessor loaded
     @readonly
     @type number
     @default 0
@@ -190,7 +193,7 @@ export default Ember.Object.extend({
   /**
     The current upload progress of the queue, as a number from 0 to 100.
 
-    @property progress
+    @accessor progress
     @readonly
     @type number
     @default 0

@@ -1,6 +1,5 @@
-/* eslint-env node */
 'use strict';
 
 module.exports = {
-  name: 'ember-file-upload'
+  name: require('./package').name
 };

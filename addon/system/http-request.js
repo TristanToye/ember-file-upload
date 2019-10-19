@@ -1,8 +1,9 @@
-import Ember from 'ember';
+import { bind } from '@ember/runloop';
+import RSVP from 'rsvp';
 import trim from './trim';
-
-const { RSVP, $ } = Ember;
-const { bind } = Ember.run;
+import parseHTML from './parse-html';
+import parseXML from './parse-xml';
+import parseJSON from './parse-json';
 
 function getHeader(headers, header) {
   let headerKeys = Object.keys(headers);
@@ -21,7 +22,7 @@ function parseResponse(request) {
 
   var headers = rawHeaders.reduce(function (E, header) {
     var parts = header.split(/^([0-9A-Za-z_-]*:)/);
-    if (parts.length > 0){
+    if (parts.length > 0 && parts[1] && parts[2]){
       E[parts[1].slice(0, -1)] = trim(parts[2]);
     }
     return E;
@@ -31,14 +32,14 @@ function parseResponse(request) {
 
   // Parse body according to the Content-Type received by the server
   if (contentType.indexOf('text/html') !== -1) {
-    body = $.parseHTML(body);
+    body = parseHTML(body);
   } else if (contentType.indexOf('text/xml') !== -1) {
-    body = $.parseXML(body);
+    body = parseXML(body);
   } else if (contentType.indexOf('application/json') !== -1 ||
-             contentType.indexOf('application/vnd.api+json') !== -1 ||
-             contentType.indexOf('text/javascript') !== -1 ||
-             contentType.indexOf('application/javascript') !== -1) {
-    body = $.parseJSON(body);
+            contentType.indexOf('application/vnd.api+json') !== -1 ||
+            contentType.indexOf('text/javascript') !== -1 ||
+            contentType.indexOf('application/javascript') !== -1) {
+    body = parseJSON(body);
   }
 
   return {
@@ -61,6 +62,12 @@ export default function (options = {}) {
       request.abort();
     }
     return aborted.promise;
+  };
+  promise.then = function(...args) {
+    let newPromise = RSVP.Promise.prototype.then.apply(this, args);
+    newPromise.cancel = promise.cancel;
+    newPromise.then = promise.then;
+    return newPromise;
   };
   request.onabort = bind(this, function () {
     this.onabort();

@@ -1,13 +1,13 @@
-import Ember from 'ember';
+import { A } from '@ember/array';
+import EmberObject, { computed, get } from '@ember/object';
 import trim from './trim';
-
-const { get, computed } = Ember;
 
 const getDataSupport = {};
 
-export default Ember.Object.extend({
+export default EmberObject.extend({
 
   dataTransfer: null,
+  itemDetails: null,
 
   queue: null,
 
@@ -26,7 +26,7 @@ export default Ember.Object.extend({
     }
   },
 
-  valid: computed('dataTransfer.files', 'files', {
+  valid: computed('dataTransfer.files', 'files', 'itemDetails', {
     get() {
       if (get(this, 'files') == null) {
         return true;
@@ -34,15 +34,17 @@ export default Ember.Object.extend({
 
       return (
         get(this, 'dataTransfer.items.length') ||
-        get(this, 'dataTransfer.files.length')
+        get(this, 'dataTransfer.files.length') ||
+        get(this, 'itemDetails.length')
       ) === get(this, 'files.length');
     }
   }),
 
-  files: computed('queue.multiple', 'queue.accept', 'dataTransfer', {
+  files: computed('queue.{accept,multiple}', 'dataTransfer', 'itemDetails', {
     get() {
       let fileList = get(this, 'dataTransfer.files');
       let itemList = get(this, 'dataTransfer.items');
+      let itemDetails = get(this, 'itemDetails');
 
       if ((fileList == null && itemList) ||
           (itemList != null && fileList != null &&
@@ -50,11 +52,17 @@ export default Ember.Object.extend({
         fileList = itemList;
       }
 
+      if ((fileList == null && itemDetails) ||
+          (itemDetails != null && fileList != null &&
+           itemDetails.length > fileList.length)) {
+        fileList = itemDetails;
+      }
+
       if (fileList == null) {
         return null;
       }
 
-      let files = Ember.A();
+      let files = A();
       if (!get(this, 'queue.multiple') && fileList.length > 1) {
         files.push(fileList[0]);
       } else {
@@ -68,16 +76,22 @@ export default Ember.Object.extend({
         return files;
       }
 
-      let tokens = Ember.A(accept.split(',').map(function (token) {
+      let tokens = A(accept.split(',').map(function (token) {
         return trim(token).toLowerCase();
       }));
-      let extensions = Ember.A(tokens.filter(function (token) {
+      let extensions = A(tokens.filter(function (token) {
         return token.indexOf('.') === 0;
       }));
-      let mimeTypes = Ember.A(Ember.A(tokens.filter(function (token) {
+      let mimeTypeTests = A(A(tokens.filter(function (token) {
         return token.indexOf('.') !== 0;
       })).map(function (mimeType) {
-        return new RegExp(mimeType);
+        return function(type) {
+          if (A([ 'audio/*', 'video/*', 'image/*' ]).includes(mimeType)) {
+            return type.split('/')[0] === mimeType.split('/')[0];
+          } else {
+            return type === mimeType;
+          }
+        };
       }));
 
       return files.filter(function (file) {
@@ -87,8 +101,8 @@ export default Ember.Object.extend({
         }
 
         let type = file.type.toLowerCase();
-        return mimeTypes.find(function (mimeType) {
-          return mimeType.test(type);
+        return mimeTypeTests.find(function (mimeTypeTest) {
+          return mimeTypeTest(type);
         }) || extensions.indexOf(extension) !== -1;
       });
     }
